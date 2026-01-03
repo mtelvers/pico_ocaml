@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.13)
 # Increase heap size for OCaml runtime BEFORE SDK init (default is only 2KB!)
 # Must use add_compile_definitions to affect crt0.S
 # Heap must fit before stack at 0x20080000, currently starts at 0x2001f5f8
-add_compile_definitions(PICO_HEAP_SIZE=466944)  # 456KB heap - max after TLS reduction
+add_compile_definitions(PICO_HEAP_SIZE=409600)  # 400KB heap - reduced for lwIP networking
 
 # Initialize the SDK based on PICO_SDK_PATH
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
@@ -58,22 +58,85 @@ pico_sdk_init()
 # Path to the OCaml cross-compiler
 set(OCAML_CROSS_COMPILER "${OCAML_DIR}/ocamlopt.opt")
 
-# Custom command to compile OCaml to assembly using patched compiler with Cortex-M33 support
-# Using soft float due to cross-compiler ABI constraints
+# ==============================================================================
+# OCaml compilation: net.ml (Network effects module)
+# ==============================================================================
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/net.s
+           ${CMAKE_CURRENT_SOURCE_DIR}/net.cmi
+           ${CMAKE_CURRENT_SOURCE_DIR}/net.cmx
+    COMMAND ${OCAML_CROSS_COMPILER}
+            -I ${OCAML_STDLIB_DIR}
+            ${OCAML_STDLIB_DIR}/stdlib.cmxa
+            -farch armv8-m.main -ffpu soft -fthumb
+            -S -c ${CMAKE_CURRENT_SOURCE_DIR}/net.ml
+    COMMAND mv ${CMAKE_CURRENT_SOURCE_DIR}/net.s ${CMAKE_CURRENT_BINARY_DIR}/net.s
+    COMMAND rm -f ${CMAKE_CURRENT_SOURCE_DIR}/net.o
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/net.ml
+    COMMENT "Compiling net.ml to Cortex-M33 assembly"
+)
+
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/net.o
+    COMMAND arm-none-eabi-as
+            -march=armv8-m.main
+            -mthumb
+            ${CMAKE_CURRENT_BINARY_DIR}/net.s
+            -o ${CMAKE_CURRENT_BINARY_DIR}/net.o
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/net.s
+    COMMENT "Assembling net.o for Cortex-M33"
+)
+
+# ==============================================================================
+# OCaml compilation: pio.ml (Fiber scheduler, imports Net)
+# ==============================================================================
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/pio.s
+           ${CMAKE_CURRENT_SOURCE_DIR}/pio.cmi
+           ${CMAKE_CURRENT_SOURCE_DIR}/pio.cmx
+    COMMAND ${OCAML_CROSS_COMPILER}
+            -I ${OCAML_STDLIB_DIR}
+            -I ${CMAKE_CURRENT_SOURCE_DIR}
+            ${OCAML_STDLIB_DIR}/stdlib.cmxa
+            -farch armv8-m.main -ffpu soft -fthumb
+            -S -c ${CMAKE_CURRENT_SOURCE_DIR}/pio.ml
+    COMMAND mv ${CMAKE_CURRENT_SOURCE_DIR}/pio.s ${CMAKE_CURRENT_BINARY_DIR}/pio.s
+    COMMAND rm -f ${CMAKE_CURRENT_SOURCE_DIR}/pio.o
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/pio.ml
+            ${CMAKE_CURRENT_SOURCE_DIR}/net.cmi
+    COMMENT "Compiling pio.ml to Cortex-M33 assembly (with Net module)"
+)
+
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/pio.o
+    COMMAND arm-none-eabi-as
+            -march=armv8-m.main
+            -mthumb
+            ${CMAKE_CURRENT_BINARY_DIR}/pio.s
+            -o ${CMAKE_CURRENT_BINARY_DIR}/pio.o
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/pio.s
+    COMMENT "Assembling pio.o for Cortex-M33"
+)
+
+# ==============================================================================
+# OCaml compilation: hello.ml (Main application, imports Net and Pio)
+# ==============================================================================
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/hello.s
     COMMAND ${OCAML_CROSS_COMPILER}
             -I ${OCAML_STDLIB_DIR}
+            -I ${CMAKE_CURRENT_SOURCE_DIR}
             ${OCAML_STDLIB_DIR}/stdlib.cmxa
             -farch armv8-m.main -ffpu soft -fthumb
             -S -c ${CMAKE_CURRENT_SOURCE_DIR}/hello.ml
     COMMAND mv ${CMAKE_CURRENT_SOURCE_DIR}/hello.s ${CMAKE_CURRENT_BINARY_DIR}/hello.s
     COMMAND rm -f ${CMAKE_CURRENT_SOURCE_DIR}/hello.o
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/hello.ml
-    COMMENT "Compiling OCaml to Cortex-M33 assembly (with stdlib)"
+            ${CMAKE_CURRENT_SOURCE_DIR}/net.cmi
+            ${CMAKE_CURRENT_SOURCE_DIR}/pio.cmi
+    COMMENT "Compiling hello.ml to Cortex-M33 assembly (with Net and Pio modules)"
 )
 
-# Assemble with arm-none-eabi-as (no patching needed!)
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/hello.o
     COMMAND arm-none-eabi-as
@@ -82,7 +145,7 @@ add_custom_command(
             ${CMAKE_CURRENT_BINARY_DIR}/hello.s
             -o ${CMAKE_CURRENT_BINARY_DIR}/hello.o
     DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/hello.s
-    COMMENT "Assembling OCaml code for Cortex-M33"
+    COMMENT "Assembling hello.o for Cortex-M33"
 )
 
 # OCaml runtime library (compiled separately)
@@ -95,6 +158,7 @@ set(OCAML_STDLIB_LIB "${CMAKE_CURRENT_SOURCE_DIR}/lib/pico_stdlib/libstdlib_pico
 add_executable(ocaml_pico
     pico_main.c
     ocaml_stubs.c
+    net_stubs.c
     frametables.S
 )
 
@@ -111,22 +175,28 @@ target_compile_definitions(ocaml_pico PRIVATE
     CAML_NAME_SPACE
 )
 
-# Add the OCaml object file and runtime to the link
-# pico_cyw43_arch_none for LED control on Pico W / Pico 2 W
-# Link order: hello.o -> stdlib -> runtime
+# Add the OCaml object files and runtime to the link
+# pico_cyw43_arch_lwip_poll for WiFi + TCP/IP networking
+# Link order: hello.o -> pio.o -> net.o -> stdlib -> runtime
 target_link_libraries(ocaml_pico
     pico_stdlib
-    pico_cyw43_arch_none
+    pico_cyw43_arch_lwip_poll
     pico_multicore
     ${CMAKE_CURRENT_BINARY_DIR}/hello.o
+    ${CMAKE_CURRENT_BINARY_DIR}/pio.o
+    ${CMAKE_CURRENT_BINARY_DIR}/net.o
     ${OCAML_STDLIB_LIB}
     ${OCAML_RUNTIME_LIB}
     ${OCAML_STDLIB_LIB}
     m
 )
 
-# Make sure hello.o is built before linking
+# Make sure OCaml objects are built before linking
+add_custom_target(ocaml_net DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/net.o)
+add_custom_target(ocaml_pio DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/pio.o)
 add_custom_target(ocaml_hello DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/hello.o)
+add_dependencies(ocaml_pio ocaml_net)
+add_dependencies(ocaml_hello ocaml_pio)
 add_dependencies(ocaml_pico ocaml_hello)
 
 # Enable USB output, disable UART output

@@ -12,7 +12,8 @@ OCaml Version: 5.5.0+dev [mtelvers/ocaml](https://github.com/mtelvers/ocaml) arm
 - Standard library support
 - Domain.spawn multicore support
 - Native ARMv8-M code generation
-- CYW43 WiFi chip LED control
+- WiFi networking with TCP/IP (lwIP)
+- Pio (effects-based I/O for Pico, following Eio conventions)
 
 ## Prerequisites
 
@@ -133,7 +134,9 @@ make stdlib && make -j4
 ```
 pico-ocaml/
 ├── CMakeLists.txt          # Main build configuration
-├── hello.ml                # OCaml program
+├── hello.ml                # Main OCaml program
+├── net.ml                  # Network module (WiFi, TCP)
+├── pio.ml                  # Pio module (effects-based I/O)
 ├── pico_main.c             # C entry point
 ├── ocaml_stubs.c           # POSIX stubs for bare-metal
 ├── ocaml_stubs.h           # Stub header included by runtime
@@ -247,6 +250,99 @@ arm-none-eabi-objdump -f file.o | grep architecture
 
 ### RAM overflow
 Too many modules in `frametables.S`. Remove unused module references.
+
+## Regenerating curry.s
+
+The `lib/curry.s` file contains the implementations of `caml_curry*`, `caml_apply*`, and `caml_tuplify*` functions. These are runtime support functions for partial application and are generated on-demand by the OCaml compiler during linking.
+
+If you need additional curry/apply arities (e.g., if your code or the stdlib uses functions with more arguments), you need to regenerate curry.s.
+
+### Step 1: Update curry.ml
+
+Edit `lib/curry.ml` to include functions of the arities you need. For example, to get `caml_curry9`, `caml_curry10`, `caml_curry11`:
+
+```ocaml
+(* Functions that trigger curry function generation *)
+let f9 a b c d e f g h i = a + b + c + d + e + f + g + h + i
+let f10 a b c d e f g h i j = a + b + c + d + e + f + g + h + i + j
+let f11 a b c d e f g h i j k = a + b + c + d + e + f + g + h + i + j + k
+
+(* Force the compiler to record these arities *)
+let _ = f9 1 2 3 4 5 6 7 8 9
+let _ = f10 1 2 3 4 5 6 7 8 9 10
+let _ = f11 1 2 3 4 5 6 7 8 9 10 11
+
+(* Apply functions through higher-order use *)
+let apply9 f = f 1 2 3 4 5 6 7 8 9
+let apply10 f = f 1 2 3 4 5 6 7 8 9 10
+let apply11 f = f 1 2 3 4 5 6 7 8 9 10 11
+
+let _ = apply9 f9
+let _ = apply10 f10
+let _ = apply11 f11
+```
+
+### Step 2: Compile and Link to Generate Startup Assembly
+
+```bash
+cd ~/pico_ocaml/lib
+
+# Compile curry.ml (generates curry.cmx with required arities)
+~/ocaml/ocamlopt.opt -I ~/ocaml/stdlib -c -S curry.ml
+
+# Attempt to link - this fails but generates the startup file with curry functions
+~/ocaml/ocamlopt.opt -I ~/ocaml/stdlib -dstartup curry.ml 2>/dev/null || true
+```
+
+This creates `a.out.startup.s` containing all the curry/apply/tuplify implementations.
+
+### Step 3: Extract and Convert the Functions
+
+```bash
+cd ~/pico_ocaml/lib
+
+# Create curry.s with proper header and extracted functions
+(
+  echo '	.syntax unified'
+  echo '	.thumb'
+  echo '	.arch armv8-m.main'
+  echo '	.fpu softvfp'
+  echo ''
+  echo '@ OCaml register aliases'
+  echo 'alloc_ptr	.req	r10'
+  echo 'domain_state_ptr	.req	r11'
+  echo 'trap_ptr	.req	r8'
+  echo ''
+  # Extract from .text before caml_curry11 through end of caml_apply2
+  # Find the line numbers for your version - these may differ
+  sed -n '79,6220p' a.out.startup.s | sed 's/\.arm/.thumb/g'
+) > curry.s
+
+# Clean up
+rm -f a.out.startup.s curry.cmx curry.cmi curry.o
+```
+
+### Step 4: Verify
+
+```bash
+# Check that all needed functions are present
+grep -c "\.globl.*caml_curry\|\.globl.*caml_apply\|\.globl.*caml_tuplify" curry.s
+# Should show the count of curry/apply/tuplify function declarations
+```
+
+### Finding the Correct Line Numbers
+
+The line numbers (79 and 6220 above) depend on your curry.ml content. To find them:
+
+```bash
+# Find start: first .globl caml_curry (look for .text before it)
+grep -n "\.globl.*caml_curry11$" a.out.startup.s
+
+# Find end: after .size caml_apply2
+grep -n "\.size.*caml_apply2" a.out.startup.s
+```
+
+Extract from a few lines before the first `.globl caml_curry` (to include `.text` and `.align`) through the `.size caml_apply2` line.
 
 ## References
 

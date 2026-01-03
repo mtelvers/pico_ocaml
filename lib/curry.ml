@@ -8,6 +8,9 @@ let f5 a b c d e = a + b + c + d + e
 let f6 a b c d e f = a + b + c + d + e + f
 let f7 a b c d e f g = a + b + c + d + e + f + g
 let f8 a b c d e f g h = a + b + c + d + e + f + g + h
+let f9 a b c d e f g h i = a + b + c + d + e + f + g + h + i
+let f10 a b c d e f g h i j = a + b + c + d + e + f + g + h + i + j
+let f11 a b c d e f g h i j k = a + b + c + d + e + f + g + h + i + j + k
 
 (* Force curry generation *)
 let _ = f2 1 2
@@ -17,6 +20,9 @@ let _ = f5 1 2 3 4 5
 let _ = f6 1 2 3 4 5 6
 let _ = f7 1 2 3 4 5 6 7
 let _ = f8 1 2 3 4 5 6 7 8
+let _ = f9 1 2 3 4 5 6 7 8 9
+let _ = f10 1 2 3 4 5 6 7 8 9 10
+let _ = f11 1 2 3 4 5 6 7 8 9 10 11
 
 (* Apply functions through higher-order *)
 let apply2 f = f 1 2
@@ -26,6 +32,9 @@ let apply5 f = f 1 2 3 4 5
 let apply6 f = f 1 2 3 4 5 6
 let apply7 f = f 1 2 3 4 5 6 7
 let apply8 f = f 1 2 3 4 5 6 7 8
+let apply9 f = f 1 2 3 4 5 6 7 8 9
+let apply10 f = f 1 2 3 4 5 6 7 8 9 10
+let apply11 f = f 1 2 3 4 5 6 7 8 9 10 11
 
 let _ = apply2 f2
 let _ = apply3 f3
@@ -34,6 +43,9 @@ let _ = apply5 f5
 let _ = apply6 f6
 let _ = apply7 f7
 let _ = apply8 f8
+let _ = apply9 f9
+let _ = apply10 f10
+let _ = apply11 f11
 
 (* Tuplify functions - take tuple and return result *)
 let tup2 (a, b) = a + b

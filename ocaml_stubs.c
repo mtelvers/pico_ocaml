@@ -804,21 +804,33 @@ value caml_global_data = 0;
  * Without this, objects referenced from module data won't be marked!
  * Note: We use asm() to specify actual symbol names which contain dots */
 extern value camlHello_gc_roots[] __asm__("camlHello.gc_roots");
+extern value camlPio_gc_roots[] __asm__("camlPio.gc_roots");
+extern value camlNet_gc_roots[] __asm__("camlNet.gc_roots");
 extern value camlStdlib__Domain_gc_roots[] __asm__("camlStdlib__Domain.gc_roots");
 extern value camlStdlib__Mutex_gc_roots[] __asm__("camlStdlib__Mutex.gc_roots");
 extern value camlStdlib__Condition_gc_roots[] __asm__("camlStdlib__Condition.gc_roots");
 extern value camlStdlib__Atomic_gc_roots[] __asm__("camlStdlib__Atomic.gc_roots");
 extern value camlStdlib__List_gc_roots[] __asm__("camlStdlib__List.gc_roots");
 extern value camlStdlib__Seq_gc_roots[] __asm__("camlStdlib__Seq.gc_roots");
+extern value camlStdlib__Effect_gc_roots[] __asm__("camlStdlib__Effect.gc_roots");
+extern value camlStdlib__Bytes_gc_roots[] __asm__("camlStdlib__Bytes.gc_roots");
+extern value camlStdlib__String_gc_roots[] __asm__("camlStdlib__String.gc_roots");
+extern value camlStdlib__Char_gc_roots[] __asm__("camlStdlib__Char.gc_roots");
 
 value *caml_globals[] = {
     camlHello_gc_roots,
+    camlPio_gc_roots,
+    camlNet_gc_roots,
     camlStdlib__Domain_gc_roots,
     camlStdlib__Mutex_gc_roots,
     camlStdlib__Condition_gc_roots,
     camlStdlib__Atomic_gc_roots,
     camlStdlib__List_gc_roots,
     camlStdlib__Seq_gc_roots,
+    camlStdlib__Effect_gc_roots,
+    camlStdlib__Bytes_gc_roots,
+    camlStdlib__String_gc_roots,
+    camlStdlib__Char_gc_roots,
     NULL
 };
 
@@ -1136,6 +1148,8 @@ extern void camlStdlib__StringLabels_entry(void) __asm__("camlStdlib__StringLabe
 extern void camlStdlib__MoreLabels_entry(void) __asm__("camlStdlib__MoreLabels.entry");
 extern void camlStdlib__StdLabels_entry(void) __asm__("camlStdlib__StdLabels.entry");
 extern void camlStdlib__Effect_entry(void) __asm__("camlStdlib__Effect.entry");
+extern void camlNet_entry(void) __asm__("camlNet.entry");
+extern void camlPio_entry(void) __asm__("camlPio.entry");
 extern void camlHello_entry(void) __asm__("camlHello.entry");
 
 /* Program entry point - MINIMAL set for Domain.spawn */
@@ -1166,8 +1180,11 @@ void caml_program(void) {
     camlStdlib__Mutex_entry();
     camlStdlib__Condition_entry();
     camlStdlib__Domain_entry();  /* create_dls() runs here! */
+    /* camlStdlib__Effect_entry();  -- Initialized via module dependency */
     /* camlStdlib__Gc_entry();   -- Needs Printf, Fun */
     /* camlStdlib__Fun_entry(); */  /* Needs Printexc */
+    camlNet_entry();  /* Net module - must be before Pio */
+    camlPio_entry();  /* Pio module - fiber scheduler, must be before Hello */
     /* Finally, the user's program */
     camlHello_entry();
 }

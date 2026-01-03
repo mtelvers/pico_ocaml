@@ -12,12 +12,18 @@
 caml_frametable:
     .word caml_system.frametable
     .word camlHello.frametable
+    .word camlPio.frametable
+    .word camlNet.frametable
     .word camlStdlib__Domain.frametable
     .word camlStdlib__Mutex.frametable
     .word camlStdlib__Condition.frametable
     .word camlStdlib__Atomic.frametable
     .word camlStdlib__List.frametable
     .word camlStdlib__Seq.frametable
+    .word camlStdlib__Effect.frametable
+    .word camlStdlib__Bytes.frametable
+    .word camlStdlib__String.frametable
+    .word camlStdlib__Char.frametable
     .word 0
     .size caml_frametable, .-caml_frametable
 
