@@ -246,10 +246,54 @@ arm-linux-gnueabi-objdump -f ~/ocaml/stdlib/stdlib.a | head -10
 ```
 
 ### Out of memory at runtime
-The Pico 2 W has limited RAM (~404KB available for heap). Reduce memory usage by:
-- Using fewer stdlib modules
-- Reducing data structure sizes
-- The runtime uses 8KB pools for the major heap
+The Pico 2 W has limited RAM (~520KB total, ~404KB available for heap). See the Memory Optimization section below for how to reduce memory usage.
+
+## Memory Optimization
+
+The OCaml runtime's major heap allocates memory in fixed-size pools. By default, these pools are 16KB (`POOL_WSIZE=4096` words), but this is too large for the memory-constrained Pico 2 W.
+
+### How Major Heap Pools Work
+
+1. Module initialisation creates OCaml values (closures, data structures, etc.)
+2. These values are first allocated in the minor heap (8KB per domain)
+3. When the minor heap fills up, or during GC, surviving objects are promoted to the major heap
+4. The major heap grows by allocating pools of `POOL_WSIZE` words
+5. Objects are packed into pools by **size class** - objects of different sizes cannot share the same pool
+
+With only 520KB of RAM, underutilised pools are significant. By reducing pool size from 16KB to 8KB:
+- Default (16KB pools): 17 pools = **272KB** used
+- Optimized (8KB pools): 20 pools = **160KB** used
+
+This saves over 100KB of RAM.
+
+### Applying the Optimization
+
+Edit `~/ocaml/tools/gen_sizeclasses.ml` and change the arena size:
+
+```diff
+-let arena = 4096
++let arena = 2048  (* Reduced from 4096 for Pico 2 W - 8KB pools instead of 16KB *)
+```
+
+Then regenerate the size classes header and rebuild:
+
+```bash
+cd ~/ocaml
+
+# Regenerate sizeclasses.h (requires ocaml to be in PATH)
+ocaml tools/gen_sizeclasses.ml > runtime/caml/sizeclasses.h
+
+# Rebuild the cross-compiler stdlib
+make -C stdlib clean
+make -C stdlib 'OPTCOMPFLAGS=-O3 -farch armv8-m.main -ffpu soft -fthumb' allopt
+
+# Rebuild the Pico runtime and project
+cd ~/pico_ocaml/build
+make runtime
+make -j4
+```
+
+This change increases the number of size classes from 32 to 35, allowing better packing of small objects into the smaller pools.
 
 ## References
 
