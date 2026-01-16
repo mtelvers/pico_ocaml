@@ -66,12 +66,31 @@ make distclean
 make crossopt -j4
 ```
 
-This builds `ocamlopt.opt` - a compiler that runs on ARM64 but generates ARM32 code with ARMv8-M support.
+This builds `ocamlopt.opt` - a compiler that runs on ARM64 but generates ARM32 code.
 
 Verify:
 ```bash
 ./ocamlopt.opt -config | grep architecture
 # Should show: architecture: arm
+```
+
+### Step 4: Rebuild Stdlib with ARMv8-M Architecture
+
+The cross-compiler builds the stdlib with default ARM architecture (ARMv4T), but Pico 2 W requires ARMv8-M. Rebuild the stdlib with the correct flags:
+
+```bash
+# Copy the host ocamlrun to boot directory (needed for stdlib build)
+cp /usr/local/bin/ocamlrun ~/ocaml/boot/ocamlrun
+
+# Rebuild stdlib with ARMv8-M architecture flags
+cd ~/ocaml
+make -C stdlib 'OPTCOMPFLAGS=-O3 -farch armv8-m.main -ffpu soft -fthumb' allopt
+```
+
+Verify the stdlib has the correct architecture:
+```bash
+arm-linux-gnueabi-objdump -f ~/ocaml/stdlib/stdlib.a | head -10
+# Should show: architecture: armv8-m.main
 ```
 
 ## Building the Pico Project
@@ -205,17 +224,25 @@ external gpio_put : int -> bool -> unit = "ocaml_gpio_put"
 ## Troubleshooting
 
 ### "inconsistent assumptions over interface Stdlib"
-Rebuild the stdlib in ~/ocaml:
+Rebuild the stdlib in ~/ocaml with the correct architecture flags:
 ```bash
-cd ~/ocaml && make -C stdlib clean && make -C stdlib allopt
+cd ~/ocaml && make -C stdlib clean
+make -C stdlib 'OPTCOMPFLAGS=-O3 -farch armv8-m.main -ffpu soft -fthumb' allopt
 cd ~/pico_ocaml/build && make -j4
 ```
 
-### Link errors about architecture mismatch
+### Link errors about architecture mismatch (ARMv8-M vs ARMv4T)
+This error occurs when the stdlib was not rebuilt with the correct architecture flags. Fix by rebuilding the stdlib:
+```bash
+cp /usr/local/bin/ocamlrun ~/ocaml/boot/ocamlrun
+cd ~/ocaml && make -C stdlib 'OPTCOMPFLAGS=-O3 -farch armv8-m.main -ffpu soft -fthumb' allopt
+cd ~/pico_ocaml/build && make -j4
+```
+
 Verify all objects are ARMv8-M:
 ```bash
-arm-none-eabi-objdump -f file.o | grep architecture
-# Should show: armv8-m.main
+arm-linux-gnueabi-objdump -f ~/ocaml/stdlib/stdlib.a | head -10
+# Should show: architecture: armv8-m.main
 ```
 
 ### Out of memory at runtime
