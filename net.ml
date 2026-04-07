@@ -98,6 +98,20 @@ let service_network () =
   lwip_service_raw ();
   net_poll_raw ()
 
+(* === Raw access for direct use without effect handlers === *)
+
+module Raw = struct
+  let wifi_connect = wifi_connect_raw
+  let wifi_get_ip = wifi_get_ip_raw
+  let udp_create = udp_create_raw
+  let udp_bind = udp_bind_raw
+  let udp_sendto = udp_sendto_raw
+  let udp_recvfrom = udp_recvfrom_raw
+  let udp_close = udp_close_raw
+  let dns_resolve = dns_resolve_raw
+  let service_network = service_network
+end
+
 (* === WiFi module === *)
 
 module Wifi = struct

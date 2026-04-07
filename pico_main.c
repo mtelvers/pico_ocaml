@@ -136,6 +136,15 @@ value ocaml_pwm_init(value v_pin, value v_freq, value v_duty) {
     return Val_unit;
 }
 
+value ocaml_pwm_set_duty(value v_pin, value v_duty) {
+    uint pin = Long_val(v_pin);
+    uint duty = Long_val(v_duty);
+    uint slice = pwm_gpio_to_slice_num(pin);
+    /* wrap is 65535 from init, so duty maps directly */
+    pwm_set_chan_level(slice, pwm_gpio_to_channel(pin), duty);
+    return Val_unit;
+}
+
 /* Initialize malloc mutex for multicore safety */
 extern void init_malloc_mutex(void);
 extern void init_sbrk_mutex(void);

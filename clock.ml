@@ -8,6 +8,7 @@ external sleep_ms : int -> unit = "ocaml_sleep_ms"
 external time_ms : unit -> int = "ocaml_time_ms"
 external cyw43_init : unit -> int = "ocaml_cyw43_init"
 external pwm_init : int -> int -> int -> unit = "ocaml_pwm_init"
+external pwm_set_duty : int -> int -> unit = "ocaml_pwm_set_duty"
 external sleep_us : int -> unit = "ocaml_sleep_us"
 
 let wifi_ssid = "SSID"
@@ -27,30 +28,47 @@ let print_int_02 n =
 let base_secs = Atomic.make 0
 let sync_ms = Atomic.make 0
 
-(* NTP query - must be called inside Net.run. Returns Some (h, m, s) or None *)
+(* NTP query using raw UDP calls - no effect handlers, minimal allocation *)
 let ntp_query () =
-  match Net.Udp.create () with
-  | exception _ -> None
-  | sock ->
-    Net.Udp.bind sock ~port:0;
+  let sock_id = Net.Raw.udp_create () in
+  if sock_id < 0 then None
+  else begin
+    let _ = Net.Raw.udp_bind sock_id 0 in
     let result =
       try
         let packet = Bytes.make 48 '\000' in
         Bytes.set packet 0 (Char.chr 0x1B);
-        let _ = Net.Udp.sendto sock ~host:"pool.ntp.org" ~port:123 packet in
-        let (response, _, _) = Net.Udp.recvfrom sock in
-        let b0 = Char.code (Bytes.get response 40) in
-        let b1 = Char.code (Bytes.get response 41) in
-        let b2 = Char.code (Bytes.get response 42) in
-        let b3 = Char.code (Bytes.get response 43) in
-        let raw = b0 * 15616 + b1 * 65536 + b2 * 256 + b3 in
-        let secs_of_day = raw mod 86400 in
-        let secs_wrapped = (secs_of_day + utc_offset_hours * 3600) mod 86400 in
-        Some (secs_wrapped / 3600, (secs_wrapped mod 3600) / 60, secs_wrapped mod 60)
+        let ip = Net.Raw.dns_resolve "pool.ntp.org" in
+        if ip = 0 then None
+        else begin
+          let _ = Net.Raw.udp_sendto sock_id ip 123 packet 48 in
+          Net.Raw.service_network ();
+          let buf = Bytes.make 48 '\000' in
+          let rec recv_loop timeout =
+            Net.Raw.service_network ();
+            let n = Net.Raw.udp_recvfrom sock_id buf in
+            if n > 0 then true
+            else if timeout < 1000 then begin
+              sleep_ms 10;
+              recv_loop (timeout + 1)
+            end else false
+          in
+          if recv_loop 0 then begin
+            let b0 = Char.code (Bytes.get buf 40) in
+            let b1 = Char.code (Bytes.get buf 41) in
+            let b2 = Char.code (Bytes.get buf 42) in
+            let b3 = Char.code (Bytes.get buf 43) in
+            let raw = b0 * 15616 + b1 * 65536 + b2 * 256 + b3 in
+            let secs_of_day = raw mod 86400 in
+            let secs_wrapped = (secs_of_day + utc_offset_hours * 3600) mod 86400 in
+            Some (secs_wrapped / 3600, (secs_wrapped mod 3600) / 60, secs_wrapped mod 60)
+          end else None
+        end
       with _ -> None
     in
-    Net.Udp.close sock;
+    Net.Raw.udp_close sock_id;
     result
+  end
 
 (* Segment bitmaps: 8 chars x 8 bytes = 64 entries, flat *)
 let bitmaps = [|
@@ -112,6 +130,19 @@ let display_colon lcd col visible =
       Lcd.write_data lcd (Char.code ' ')
   done
 
+(* Backlight brightness based on time of day.
+   Gradual transition: +16/sec from 6am-7am, -16/sec from 9pm-10pm *)
+let backlight_of_time day_secs =
+  let min_bright = 7935 in   (* ~12% *)
+  let max_bright = 65535 in
+  if day_secs < 21600 then min_bright              (* midnight-6am *)
+  else if day_secs < 25200 then                     (* 6am-7am: brighten *)
+    min_bright + (day_secs - 21600) * 16
+  else if day_secs < 75600 then max_bright          (* 7am-9pm *)
+  else if day_secs < 79200 then                     (* 9pm-10pm: dim *)
+    max_bright - (day_secs - 75600) * 16
+  else min_bright                                    (* 10pm-midnight *)
+
 (* Display loop - runs on Core 1 via Domain.spawn.
    Tail-recursive with bool parameter: no refs, no allocation. *)
 let rec display_loop lcd colon =
@@ -119,6 +150,7 @@ let rec display_loop lcd colon =
   let sm = Atomic.get sync_ms in
   let elapsed = (time_ms () - sm) / 1000 in
   let day_secs = (bs + elapsed) mod 86400 in
+  pwm_set_duty 27 (backlight_of_time day_secs);
   let hours = day_secs / 3600 in
   let minutes = (day_secs mod 3600) / 60 in
   let seconds = day_secs mod 60 in
@@ -141,8 +173,8 @@ let () =
 
   let _ = cyw43_init () in
 
-  (* Backlight *)
-  pwm_init 22 1000 65535;
+  (* Backlight on GPIO 27 - avoids PWM slice conflict with CYW43 on GPIO 23 *)
+  pwm_init 27 1000 65535;
 
   (* Initialize LCD *)
   let lcd = Lcd.init
@@ -158,38 +190,38 @@ let () =
   Lcd.print_string lcd wifi_ssid;
 
   (* Connect WiFi *)
-  Net.run (fun () ->
-    print_endline "Connecting to WiFi...";
-    Net.Wifi.connect ~ssid:wifi_ssid ~password:wifi_password ();
-    let ip = Net.Wifi.get_ip () in
-    print_string "IP: ";
-    print_endline ip;
-    Lcd.move_to lcd 0 2;
-    Lcd.print_string lcd "IP: ";
-    Lcd.print_string lcd ip
-  );
+  print_endline "Connecting to WiFi...";
+  let _ = Net.Raw.wifi_connect wifi_ssid wifi_password 30000 in
+  let ip = Net.Raw.wifi_get_ip () in
+  let ip_str = Net.ip_to_string ip in
+  print_string "IP: ";
+  print_endline ip_str;
+  Lcd.move_to lcd 0 2;
+  Lcd.print_string lcd "IP: ";
+  Lcd.print_string lcd ip_str;
   sleep_ms 1000;
   Lcd.clear lcd;
 
-  (* Free memory before spawning second domain *)
   Gc.compact ();
   let _display = Domain.spawn (fun () -> display_loop lcd true) in
   print_endline "Display running on Core 1";
 
   (* Core 0: NTP sync loop (first sync + periodic re-sync) *)
   while true do
-    Gc.full_major ();
-    Net.run (fun () ->
-      match ntp_query () with
-      | Some (h, m, s) ->
-          Atomic.set base_secs (h * 3600 + m * 60 + s);
-          Atomic.set sync_ms (time_ms ());
-          print_string "NTP sync: ";
-          print_int_02 h; print_string ":";
-          print_int_02 m; print_string ":";
-          print_int_02 s; print_endline ""
-      | None ->
-          print_endline "NTP failed"
-    );
-    sleep_ms resync_interval_ms
+    begin match ntp_query () with
+    | Some (h, m, s) ->
+        Atomic.set base_secs (h * 3600 + m * 60 + s);
+        Atomic.set sync_ms (time_ms ());
+        print_string "NTP sync: ";
+        print_int_02 h; print_string ":";
+        print_int_02 m; print_string ":";
+        print_int_02 s; print_endline ""
+    | None ->
+        print_endline "NTP failed"
+    end;
+    (* Keep polling network during wait to maintain WiFi connection *)
+    for _ = 1 to resync_interval_ms / 100 do
+      Net.Raw.service_network ();
+      sleep_ms 100
+    done
   done
