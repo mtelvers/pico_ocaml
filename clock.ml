@@ -30,23 +30,23 @@ let sync_ms = Atomic.make 0
 
 (* NTP query using raw UDP calls - no effect handlers, minimal allocation *)
 let ntp_query () =
-  let sock_id = Net.Raw.udp_create () in
+  let sock_id = Netif.udp_create () in
   if sock_id < 0 then None
   else begin
-    let _ = Net.Raw.udp_bind sock_id 0 in
+    let _ = Netif.udp_bind sock_id 0 in
     let result =
       try
         let packet = Bytes.make 48 '\000' in
         Bytes.set packet 0 (Char.chr 0x1B);
-        let ip = Net.Raw.dns_resolve "pool.ntp.org" in
+        let ip = Netif.dns_resolve "pool.ntp.org" in
         if ip = 0 then None
         else begin
-          let _ = Net.Raw.udp_sendto sock_id ip 123 packet 48 in
-          Net.Raw.service_network ();
+          let _ = Netif.udp_sendto sock_id ip 123 packet 48 in
+          Netif.service_network ();
           let buf = Bytes.make 48 '\000' in
           let rec recv_loop timeout =
-            Net.Raw.service_network ();
-            let n = Net.Raw.udp_recvfrom sock_id buf in
+            Netif.service_network ();
+            let n = Netif.udp_recvfrom sock_id buf in
             if n > 0 then true
             else if timeout < 1000 then begin
               sleep_ms 10;
@@ -66,7 +66,7 @@ let ntp_query () =
         end
       with _ -> None
     in
-    Net.Raw.udp_close sock_id;
+    Netif.udp_close sock_id;
     result
   end
 
@@ -191,9 +191,9 @@ let () =
 
   (* Connect WiFi *)
   print_endline "Connecting to WiFi...";
-  let _ = Net.Raw.wifi_connect wifi_ssid wifi_password 30000 in
-  let ip = Net.Raw.wifi_get_ip () in
-  let ip_str = Net.ip_to_string ip in
+  let _ = Netif.wifi_connect wifi_ssid wifi_password 30000 in
+  let ip = Netif.wifi_get_ip () in
+  let ip_str = Netif.ip_to_string ip in
   print_string "IP: ";
   print_endline ip_str;
   Lcd.move_to lcd 0 2;
@@ -202,7 +202,6 @@ let () =
   sleep_ms 1000;
   Lcd.clear lcd;
 
-  Gc.compact ();
   let _display = Domain.spawn (fun () -> display_loop lcd true) in
   print_endline "Display running on Core 1";
 
@@ -221,7 +220,7 @@ let () =
     end;
     (* Keep polling network during wait to maintain WiFi connection *)
     for _ = 1 to resync_interval_ms / 100 do
-      Net.Raw.service_network ();
+      Netif.service_network ();
       sleep_ms 100
     done
   done

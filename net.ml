@@ -1,43 +1,29 @@
 (* net.ml - OCaml 5 effects-based networking for Pico 2 W *)
 (* Defines network effect types and API modules *)
 (* Effect handling is done by Pio for integration with fiber scheduler *)
+(* Raw network stubs are in Netif. *)
 
-(* === External C stubs === *)
+(* Aliases for internal use *)
+let wifi_connect_raw = Netif.wifi_connect
+let wifi_disconnect_raw = Netif.wifi_disconnect
+let wifi_is_connected_raw = Netif.wifi_is_connected
+let wifi_get_ip_raw = Netif.wifi_get_ip
+let tcp_create_raw = Netif.tcp_create
+let tcp_connect_raw = Netif.tcp_connect
+let tcp_write_raw = Netif.tcp_write
+let tcp_read_raw = Netif.tcp_read
+let tcp_close_raw = Netif.tcp_close
+let udp_create_raw = Netif.udp_create
+let udp_bind_raw = Netif.udp_bind
+let udp_sendto_raw = Netif.udp_sendto
+let udp_recvfrom_raw = Netif.udp_recvfrom
+let udp_close_raw = Netif.udp_close
+let dns_resolve_raw = Netif.dns_resolve
+let ip_from_string = Netif.ip_from_string
+let ip_to_string = Netif.ip_to_string
+let service_network = Netif.service_network
 
-(* WiFi control *)
-external wifi_connect_raw : string -> string -> int -> int = "ocaml_wifi_connect"
-external wifi_disconnect_raw : unit -> unit = "ocaml_wifi_disconnect"
-external wifi_is_connected_raw : unit -> int = "ocaml_wifi_is_connected"
-external wifi_get_ip_raw : unit -> int = "ocaml_wifi_get_ip"
-
-(* TCP sockets *)
-external tcp_create_raw : unit -> int = "ocaml_tcp_create"
-external tcp_connect_raw : int -> int -> int -> int = "ocaml_tcp_connect"
-external tcp_write_raw : int -> bytes -> int -> int = "ocaml_tcp_write"
-external tcp_read_raw : int -> bytes -> int -> int = "ocaml_tcp_read"
-external tcp_close_raw : int -> unit = "ocaml_tcp_close"
-
-(* UDP sockets *)
-external udp_create_raw : unit -> int = "ocaml_udp_create"
-external udp_bind_raw : int -> int -> int = "ocaml_udp_bind"
-external udp_sendto_raw : int -> int -> int -> bytes -> int -> int = "ocaml_udp_sendto"
-external udp_recvfrom_raw : int -> bytes -> int = "ocaml_udp_recvfrom"
-external udp_close_raw : int -> unit = "ocaml_udp_close"
-
-(* DNS resolution *)
-external dns_resolve_raw : string -> int = "ocaml_dns_resolve"
-
-(* Network polling and events *)
-external net_poll_raw : unit -> unit = "ocaml_net_poll"
-external lwip_service_raw : unit -> unit = "ocaml_lwip_service"
-
-(* IP utilities *)
-external ip_from_string_raw : string -> int = "ocaml_ip_from_string"
-external ip_to_string_raw : int -> string = "ocaml_ip_to_string"
-
-(* Pico timing *)
 external sleep_ms : int -> unit = "ocaml_sleep_ms"
-external time_ms : unit -> int = "ocaml_time_ms"
 
 (* Debug output *)
 external debug_print : string -> unit = "pico_print"
@@ -98,19 +84,6 @@ let service_network () =
   lwip_service_raw ();
   net_poll_raw ()
 
-(* === Raw access for direct use without effect handlers === *)
-
-module Raw = struct
-  let wifi_connect = wifi_connect_raw
-  let wifi_get_ip = wifi_get_ip_raw
-  let udp_create = udp_create_raw
-  let udp_bind = udp_bind_raw
-  let udp_sendto = udp_sendto_raw
-  let udp_recvfrom = udp_recvfrom_raw
-  let udp_close = udp_close_raw
-  let dns_resolve = dns_resolve_raw
-  let service_network = service_network
-end
 
 (* === WiFi module === *)
 

@@ -43,22 +43,23 @@ set(OCAML_CROSS_COMPILER "${OCAML_DIR}/ocamlopt.opt")
 # curry/apply functions, frametables, and exception definitions.
 # ==============================================================================
 # Select which OCaml application to build:
-#   "clock" - Digital clock on HD44780 LCD (lcd.ml, clock.ml)
-#   "hello" - Dual-core networking demo (net.ml, pio.ml, hello.ml)
+#   "clock" - Digital clock on HD44780 LCD (netif.ml, lcd.ml, clock.ml)
+#   "hello" - Dual-core networking demo (netif.ml, net.ml, pio.ml, hello.ml)
 set(OCAML_APP "clock" CACHE STRING "OCaml application to build")
 
 if(OCAML_APP STREQUAL "clock")
     set(OCAML_SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/net.ml
+        ${CMAKE_CURRENT_SOURCE_DIR}/netif.ml
         ${CMAKE_CURRENT_SOURCE_DIR}/lcd.ml
         ${CMAKE_CURRENT_SOURCE_DIR}/clock.ml)
-    set(OCAML_COMMENT "Compiling OCaml modules (net.ml, lcd.ml, clock.ml)")
+    set(OCAML_COMMENT "Compiling OCaml modules (netif.ml, lcd.ml, clock.ml)")
 else()
     set(OCAML_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/netif.ml
         ${CMAKE_CURRENT_SOURCE_DIR}/net.ml
         ${CMAKE_CURRENT_SOURCE_DIR}/pio.ml
         ${CMAKE_CURRENT_SOURCE_DIR}/hello.ml)
-    set(OCAML_COMMENT "Compiling OCaml modules (net.ml, pio.ml, hello.ml)")
+    set(OCAML_COMMENT "Compiling OCaml modules (netif.ml, net.ml, pio.ml, hello.ml)")
 endif()
 
 add_custom_command(
