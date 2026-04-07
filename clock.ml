@@ -79,42 +79,42 @@ let digits = [|
   1;0;7; 3;4;5; 8;8;6; 3;4;5;   (* 9 *)
 |]
 
-let load_custom_chars () =
+let load_custom_chars lcd =
   for i = 0 to 7 do
-    Lcd.write_command (0x40 lor (i lsl 3));
+    Lcd.write_command lcd (0x40 lor (i lsl 3));
     sleep_us 40;
     for j = 0 to 7 do
-      Lcd.write_data bitmaps.(i * 8 + j);
+      Lcd.write_data lcd bitmaps.(i * 8 + j);
       sleep_us 40
     done
   done;
-  Lcd.move_to 0 0
+  Lcd.move_to lcd 0 0
 
-let display_digit col digit =
+let display_digit lcd col digit =
   let base = digit * 12 in
   for row = 0 to 3 do
-    Lcd.move_to col row;
+    Lcd.move_to lcd col row;
     for c = 0 to 2 do
       let seg = digits.(base + row * 3 + c) in
       if seg = 8 then
-        Lcd.write_data (Char.code ' ')
+        Lcd.write_data lcd (Char.code ' ')
       else
-        Lcd.write_data seg
+        Lcd.write_data lcd seg
     done
   done
 
-let display_colon col visible =
+let display_colon lcd col visible =
   for row = 0 to 3 do
-    Lcd.move_to col row;
+    Lcd.move_to lcd col row;
     if visible && (row = 1 || row = 2) then
-      Lcd.write_data 0xA5
+      Lcd.write_data lcd 0xA5
     else
-      Lcd.write_data (Char.code ' ')
+      Lcd.write_data lcd (Char.code ' ')
   done
 
 (* Display loop - runs on Core 1 via Domain.spawn.
    Tail-recursive with bool parameter: no refs, no allocation. *)
-let rec display_loop colon =
+let rec display_loop lcd colon =
   let bs = Atomic.get base_secs in
   let sm = Atomic.get sync_ms in
   let elapsed = (time_ms () - sm) / 1000 in
@@ -122,16 +122,16 @@ let rec display_loop colon =
   let hours = day_secs / 3600 in
   let minutes = (day_secs mod 3600) / 60 in
   let seconds = day_secs mod 60 in
-  display_digit  2 (hours / 10);
-  display_digit  6 (hours mod 10);
-  display_colon  9 colon;
-  display_digit 10 (minutes / 10);
-  display_digit 14 (minutes mod 10);
-  Lcd.move_to 18 3;
-  Lcd.write_data (Char.code '0' + seconds / 10);
-  Lcd.write_data (Char.code '0' + seconds mod 10);
+  display_digit lcd  2 (hours / 10);
+  display_digit lcd  6 (hours mod 10);
+  display_colon lcd  9 colon;
+  display_digit lcd 10 (minutes / 10);
+  display_digit lcd 14 (minutes mod 10);
+  Lcd.move_to lcd 18 3;
+  Lcd.write_data lcd (Char.code '0' + seconds / 10);
+  Lcd.write_data lcd (Char.code '0' + seconds mod 10);
   sleep_ms 1000;
-  display_loop (not colon)
+  display_loop lcd (not colon)
 
 let () =
   print_endline "=== OCaml Digital Clock ===";
@@ -145,17 +145,17 @@ let () =
   pwm_init 22 1000 65535;
 
   (* Initialize LCD *)
-  Lcd.init
+  let lcd = Lcd.init
     ~rs_pin:16 ~en_pin:17
     ~d4_pin:18 ~d5_pin:19 ~d6_pin:20 ~d7_pin:21
-    ~lines:4 ~cols:20;
-  load_custom_chars ();
+    ~lines:4 ~cols:20 in
+  load_custom_chars lcd;
 
   (* Show WiFi status on LCD *)
-  Lcd.move_to 0 0;
-  Lcd.print_string "Connecting WiFi...";
-  Lcd.move_to 0 1;
-  Lcd.print_string wifi_ssid;
+  Lcd.move_to lcd 0 0;
+  Lcd.print_string lcd "Connecting WiFi...";
+  Lcd.move_to lcd 0 1;
+  Lcd.print_string lcd wifi_ssid;
 
   (* Connect WiFi *)
   Net.run (fun () ->
@@ -164,16 +164,16 @@ let () =
     let ip = Net.Wifi.get_ip () in
     print_string "IP: ";
     print_endline ip;
-    Lcd.move_to 0 2;
-    Lcd.print_string "IP: ";
-    Lcd.print_string ip
+    Lcd.move_to lcd 0 2;
+    Lcd.print_string lcd "IP: ";
+    Lcd.print_string lcd ip
   );
   sleep_ms 1000;
-  Lcd.clear ();
+  Lcd.clear lcd;
 
   (* Free memory before spawning second domain *)
   Gc.compact ();
-  let _display = Domain.spawn (fun () -> display_loop true) in
+  let _display = Domain.spawn (fun () -> display_loop lcd true) in
   print_endline "Display running on Core 1";
 
   (* Core 0: NTP sync loop (first sync + periodic re-sync) *)
