@@ -113,27 +113,25 @@ let display_colon col visible =
   done
 
 (* Display loop - runs on Core 1 via Domain.spawn.
-   Uses only / and mod (no heap allocation) so Core 1 never triggers GC. *)
-let display_loop colon () =
-  while true do
-    let bs = Atomic.get base_secs in
-    let sm = Atomic.get sync_ms in
-    let elapsed = (time_ms () - sm) / 1000 in
-    let day_secs = (bs + elapsed) mod 86400 in
-    let hours = day_secs / 3600 in
-    let minutes = (day_secs mod 3600) / 60 in
-    let seconds = day_secs mod 60 in
-    display_digit  2 (hours / 10);
-    display_digit  6 (hours mod 10);
-    display_colon  9 !colon;
-    display_digit 10 (minutes / 10);
-    display_digit 14 (minutes mod 10);
-    Lcd.move_to 18 3;
-    Lcd.write_data (Char.code '0' + seconds / 10);
-    Lcd.write_data (Char.code '0' + seconds mod 10);
-    colon := not !colon;
-    sleep_ms 1000
-  done
+   Tail-recursive with bool parameter: no refs, no allocation. *)
+let rec display_loop colon =
+  let bs = Atomic.get base_secs in
+  let sm = Atomic.get sync_ms in
+  let elapsed = (time_ms () - sm) / 1000 in
+  let day_secs = (bs + elapsed) mod 86400 in
+  let hours = day_secs / 3600 in
+  let minutes = (day_secs mod 3600) / 60 in
+  let seconds = day_secs mod 60 in
+  display_digit  2 (hours / 10);
+  display_digit  6 (hours mod 10);
+  display_colon  9 colon;
+  display_digit 10 (minutes / 10);
+  display_digit 14 (minutes mod 10);
+  Lcd.move_to 18 3;
+  Lcd.write_data (Char.code '0' + seconds / 10);
+  Lcd.write_data (Char.code '0' + seconds mod 10);
+  sleep_ms 1000;
+  display_loop (not colon)
 
 let () =
   print_endline "=== OCaml Digital Clock ===";
@@ -173,12 +171,9 @@ let () =
   sleep_ms 1000;
   Lcd.clear ();
 
-  (* Pre-allocate display loop state on Core 0's heap *)
-  let colon = ref true in
-
-  (* Aggressively free memory before spawning second domain *)
+  (* Free memory before spawning second domain *)
   Gc.compact ();
-  let _display = Domain.spawn (display_loop colon) in
+  let _display = Domain.spawn (fun () -> display_loop true) in
   print_endline "Display running on Core 1";
 
   (* Core 0: NTP sync loop (first sync + periodic re-sync) *)
