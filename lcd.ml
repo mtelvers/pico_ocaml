@@ -84,6 +84,4 @@ let move_to t col row =
   write_command t (0x80 lor addr)
 
 let print_string t s =
-  for i = 0 to String.length s - 1 do
-    write_data t (Char.code (String.get s i))
-  done
+  String.iter (fun c -> write_data t (Char.code c)) s
