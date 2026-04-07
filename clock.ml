@@ -202,6 +202,7 @@ let () =
   sleep_ms 1000;
   Lcd.clear lcd;
 
+  Gc.compact ();
   let _display = Domain.spawn (fun () -> display_loop lcd true) in
   print_endline "Display running on Core 1";
 
