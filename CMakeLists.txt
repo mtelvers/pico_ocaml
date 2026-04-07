@@ -42,6 +42,25 @@ set(OCAML_CROSS_COMPILER "${OCAML_DIR}/ocamlopt.opt")
 # This produces one .o file containing all OCaml modules, stdlib, startup code,
 # curry/apply functions, frametables, and exception definitions.
 # ==============================================================================
+# Select which OCaml application to build:
+#   "clock" - Digital clock on HD44780 LCD (lcd.ml, clock.ml)
+#   "hello" - Dual-core networking demo (net.ml, pio.ml, hello.ml)
+set(OCAML_APP "clock" CACHE STRING "OCaml application to build")
+
+if(OCAML_APP STREQUAL "clock")
+    set(OCAML_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/net.ml
+        ${CMAKE_CURRENT_SOURCE_DIR}/lcd.ml
+        ${CMAKE_CURRENT_SOURCE_DIR}/clock.ml)
+    set(OCAML_COMMENT "Compiling OCaml modules (net.ml, lcd.ml, clock.ml)")
+else()
+    set(OCAML_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/net.ml
+        ${CMAKE_CURRENT_SOURCE_DIR}/pio.ml
+        ${CMAKE_CURRENT_SOURCE_DIR}/hello.ml)
+    set(OCAML_COMMENT "Compiling OCaml modules (net.ml, pio.ml, hello.ml)")
+endif()
+
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/ocaml_code.o
     COMMAND ${OCAML_CROSS_COMPILER}
@@ -51,13 +70,9 @@ add_custom_command(
             -farch armv8-m.main -ffpu soft -fthumb
             -output-obj -without-runtime
             -o ${CMAKE_CURRENT_BINARY_DIR}/ocaml_code.o
-            ${CMAKE_CURRENT_SOURCE_DIR}/net.ml
-            ${CMAKE_CURRENT_SOURCE_DIR}/pio.ml
-            ${CMAKE_CURRENT_SOURCE_DIR}/hello.ml
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/net.ml
-            ${CMAKE_CURRENT_SOURCE_DIR}/pio.ml
-            ${CMAKE_CURRENT_SOURCE_DIR}/hello.ml
-    COMMENT "Compiling OCaml modules to single object file (net.ml, pio.ml, hello.ml)"
+            ${OCAML_SOURCES}
+    DEPENDS ${OCAML_SOURCES}
+    COMMENT "${OCAML_COMMENT}"
 )
 
 # OCaml runtime library (compiled separately)
@@ -89,6 +104,7 @@ target_link_libraries(ocaml_pico
     pico_stdlib
     pico_cyw43_arch_lwip_poll
     pico_multicore
+    hardware_pwm
     ${CMAKE_CURRENT_BINARY_DIR}/ocaml_code.o
     ${OCAML_RUNTIME_LIB}
     m

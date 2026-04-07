@@ -12,6 +12,7 @@
 #include "pico/cyw43_arch.h"
 #include "pico/multicore.h"
 #include "hardware/sync.h"
+#include "hardware/pwm.h"
 
 
 /* TLS initialization */
@@ -111,6 +112,27 @@ value ocaml_gpio_set_dir_out(value pin) {
 
 value ocaml_gpio_put(value pin, value on) {
     gpio_put(Long_val(pin), Bool_val(on));
+    return Val_unit;
+}
+
+value ocaml_sleep_us(value us) {
+    sleep_us(Long_val(us));
+    return Val_unit;
+}
+
+value ocaml_pwm_init(value v_pin, value v_freq, value v_duty) {
+    uint pin = Long_val(v_pin);
+    uint freq = Long_val(v_freq);
+    uint duty = Long_val(v_duty);
+
+    gpio_set_function(pin, GPIO_FUNC_PWM);
+    uint slice = pwm_gpio_to_slice_num(pin);
+    uint32_t wrap = 125000000 / freq;
+    if (wrap > 65535) wrap = 65535;
+    pwm_set_wrap(slice, wrap);
+    pwm_set_chan_level(slice, pwm_gpio_to_channel(pin), (wrap * duty) / 65535);
+    pwm_set_enabled(slice, true);
+
     return Val_unit;
 }
 
